@@ -38,6 +38,19 @@ static int mime_is_jpeg(const char *s)
     return 0;
 }
 
+static int mime_is_png(const char *s)
+{
+
+    int i;
+    for (i = 0; s[i]; i++) {
+        if (tolower((unsigned char)s[i]) == 'p' &&
+            tolower((unsigned char)s[i + 1]) == 'n' &&
+            tolower((unsigned char)s[i + 2]) == 'g')
+            return 1;
+    }
+    return 0;
+}
+
 static void decode_text(int enc, const unsigned char *s, long len,
                         char *out, int outsz)
 {
@@ -76,13 +89,16 @@ static void extract_pic(const unsigned char *d, long fsize, int major,
 {
     long i = 1;
     int enc = d[0];
-    int is_jpeg = 0;
+    int is_img = 0;
 
     if (major == 2) {
+
         char fmt[4] = {0};
         if (fsize >= 4) { memcpy(fmt, d + 1, 3); i = 4; }
         if ((fmt[0] == 'J' || fmt[0] == 'j') && (fmt[1] == 'P' || fmt[1] == 'p'))
-            is_jpeg = 1;
+            is_img = 1;
+        else if ((fmt[0] == 'P' || fmt[0] == 'p') && (fmt[1] == 'N' || fmt[1] == 'n'))
+            is_img = 1;
     } else {
         char mime[48];
         int m = 0;
@@ -90,7 +106,7 @@ static void extract_pic(const unsigned char *d, long fsize, int major,
             mime[m++] = (char)d[i++];
         mime[m] = '\0';
         i++;
-        is_jpeg = mime_is_jpeg(mime);
+        is_img = mime_is_jpeg(mime) || mime_is_png(mime);
     }
 
     if (i < fsize) i++;
@@ -103,7 +119,7 @@ static void extract_pic(const unsigned char *d, long fsize, int major,
         i++;
     }
 
-    if (is_jpeg && i < fsize) {
+    if (is_img && i < fsize) {
         t->has_art = 1;
         t->art_offset = fileoff + i;
         t->art_len = fsize - i;

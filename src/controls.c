@@ -6,6 +6,7 @@
 #include "text.h"
 #include "widgets.h"
 #include "lyrics.h"
+#include "viz.h"
 
 static void disc(float cx, float cy, float r, unsigned int col)
 {
@@ -130,13 +131,16 @@ void controls_draw(float anim)
         { "PAGE / SKIM",      { BTN_DPAD_LEFT, BTN_DPAD_RIGHT }, 2 },
         { "OPEN / PLAY",      { BTN_CROSS                     }, 1 },
         { "BACK",             { BTN_CIRCLE                    }, 1 },
-        { "ALBUM / PLAYLIST", { BTN_SQUARE                    }, 1 },
+        { "ALBUM/PL/TREES",   { BTN_SQUARE                    }, 1 },
         { "SETTINGS",         { BTN_TRIANGLE                  }, 1 },
         { "REPLAY / NEXT",    { BTN_L,         BTN_R          }, 2 },
         { "PREV (DBL-TAP)",   { BTN_L                         }, 1 },
         { "SHUFFLE",          { BTN_L,         BTN_SQUARE     }, 2 },
 #if LYRICS_ENABLED
         { "LYRICS",           { BTN_TRIANGLE                  }, 1 },
+#endif
+#if VIZ_ENABLED
+        { "VISUALIZERS",      { BTN_SQUARE                    }, 1 },
 #endif
         { "CONTROLS",         { BTN_SELECT                    }, 1 },
         { "PLAY / PAUSE",     { BTN_START                     }, 1 },
@@ -146,7 +150,7 @@ void controls_draw(float anim)
     int   px = SCR_W - (int)(CTRL_W * e);
     int   ix = px + 14;
     int   actx = ix + 70;
-    int   y0 = 50, pitch = 18, s = 16;
+    int   y0 = 50, pitch = 17, s = 16;
     int   i, j;
 
     gfx_quad(0, 0, SCR_W, SCR_H, RGBA(0, 0, 0, (unsigned int)(120.0f * e)));

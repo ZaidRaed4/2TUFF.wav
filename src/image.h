@@ -3,6 +3,10 @@
 
 #include "gfx.h"
 
+Texture *image_load_cover_file(const char *path, int size);
+Texture *image_load_cover_mem(const unsigned char *buf, unsigned long len,
+                              int size);
+
 Texture *image_load_jpeg_file(const char *path, int size);
 Texture *image_load_jpeg_mem(const unsigned char *buf, unsigned long len,
                              int size);

@@ -88,6 +88,16 @@ static int rec_cmp(const void *x, const void *y)
     return ci_cmp(((const Record *)x)->name, ((const Record *)y)->name);
 }
 
+static int node_cmp(const void *x, const void *y)
+{
+    return ci_cmp(((const FolderNode *)x)->name, ((const FolderNode *)y)->name);
+}
+
+static int is_hidden(const char *name)
+{
+    return name[0] == '.';
+}
+
 static int track_cmp(const void *x, const void *y)
 {
     return ci_cmp(((const Track *)x)->path, ((const Track *)y)->path);
@@ -121,9 +131,23 @@ static Track *push_track(Record *r)
     return &n[r->track_count++];
 }
 
+static FolderNode *push_node(FolderNode **arr, int *count)
+{
+    FolderNode *n = (FolderNode *)realloc(*arr, (*count + 1) * sizeof(FolderNode));
+    FolderNode *r;
+    if (!n) return NULL;
+    *arr = n;
+    r = &n[*count];
+    memset(r, 0, sizeof(FolderNode));
+    (*count)++;
+    return r;
+}
+
 static int cover_rank(const char *name)
 {
-    if (!has_ext(name, "jpg") && !has_ext(name, "jpeg")) return -1;
+    if (is_hidden(name)) return -1;
+    if (!has_ext(name, "jpg") && !has_ext(name, "jpeg") && !has_ext(name, "png"))
+        return -1;
     if (ci_starts(name, "cover"))    return 3;
     if (ci_starts(name, "folder"))   return 2;
     if (ci_starts(name, "front") || ci_starts(name, "albumart")) return 1;
@@ -167,7 +191,7 @@ static void scan_album(Record *r, const char *dir, const char *display_name)
     if (d < 0) return;
     memset(&de, 0, sizeof(de));
     while (sceIoDread(d, &de) > 0) {
-        if (de.d_name[0] && !is_dirent_dir(&de)) {
+        if (de.d_name[0] && !is_hidden(de.d_name) && !is_dirent_dir(&de)) {
             if (has_ext(de.d_name, "mp3")) {
                 Track *t = push_track(r);
                 if (t) {
@@ -191,6 +215,95 @@ static void scan_album(Record *r, const char *dir, const char *display_name)
         qsort(r->tracks, r->track_count, sizeof(Track), track_cmp);
 }
 
+static int record_is_mixed_album(const Record *r);
+
+static int scan_folder_tree(FolderNode *node, const char *dir,
+                            const char *name, int depth)
+{
+    SceUID d;
+    SceIoDirent de;
+    Record *rec = NULL;
+    char cover[MAX_PATH_LEN];
+    int  best_cover = -1;
+    char (*subdirs)[NAME_LEN] = NULL;
+    int  nsub = 0;
+    int  i;
+
+    scopy(node->name, NAME_LEN, name);
+    scopy(node->path, MAX_PATH_LEN, dir);
+    node->children = NULL;
+    node->child_count = 0;
+    node->record = NULL;
+
+    d = sceIoDopen(dir);
+    if (d < 0) return 0;
+
+    cover[0] = '\0';
+    memset(&de, 0, sizeof(de));
+    while (sceIoDread(d, &de) > 0) {
+        if (de.d_name[0] && !is_hidden(de.d_name)) {
+            if (is_dirent_dir(&de)) {
+                char (*n2)[NAME_LEN] =
+                    (char (*)[NAME_LEN])realloc(subdirs, (nsub + 1) * NAME_LEN);
+                if (n2) { subdirs = n2; scopy(subdirs[nsub], NAME_LEN, de.d_name); nsub++; }
+            } else if (has_ext(de.d_name, "mp3")) {
+                if (!rec) {
+                    rec = (Record *)calloc(1, sizeof(Record));
+                    if (rec) {
+                        scopy(rec->name, NAME_LEN, name);
+                        scopy(rec->path, MAX_PATH_LEN, dir);
+                    }
+                }
+                if (rec) {
+                    Track *t = push_track(rec);
+                    if (t) {
+                        path_join(t->path, MAX_PATH_LEN, dir, de.d_name);
+                        filename_title(t->title, NAME_LEN, de.d_name);
+                    }
+                }
+            } else {
+                int cr = cover_rank(de.d_name);
+                if (cr > best_cover) {
+                    best_cover = cr;
+                    path_join(cover, MAX_PATH_LEN, dir, de.d_name);
+                }
+            }
+        }
+        memset(&de, 0, sizeof(de));
+    }
+    sceIoDclose(d);
+
+    if (rec && rec->track_count > 0) {
+        scopy(rec->cover_path, MAX_PATH_LEN, cover);
+        if (rec->track_count > 1)
+            qsort(rec->tracks, rec->track_count, sizeof(Track), track_cmp);
+        rec->is_playlist = record_is_mixed_album(rec);
+        node->record = rec;
+        free(subdirs);
+        return 1;
+    }
+    if (rec) { free(rec->tracks); free(rec); }
+
+    if (depth + 1 < MAX_TREE_DEPTH) {
+        for (i = 0; i < nsub; i++) {
+            char sub[MAX_PATH_LEN];
+            FolderNode *child = push_node(&node->children, &node->child_count);
+            if (!child) break;
+            path_join(sub, sizeof(sub), dir, subdirs[i]);
+            if (!scan_folder_tree(child, sub, subdirs[i], depth + 1)) {
+                free(child->children);
+                node->child_count--;
+            }
+        }
+    }
+    free(subdirs);
+
+    if (node->child_count > 1)
+        qsort(node->children, node->child_count, sizeof(FolderNode), node_cmp);
+
+    return node->child_count > 0;
+}
+
 static void normalize_slashes(char *s)
 {
     for (; *s; s++) if (*s == '\\') *s = '/';
@@ -202,6 +315,40 @@ static int looks_absolute(const char *p)
     if (p[0] && p[1] == ':') return 1;
     if (strstr(p, ":/")) return 1;
     return 0;
+}
+
+static int file_exists(const char *path)
+{
+    SceIoStat st;
+    return sceIoGetstat(path, &st) >= 0;
+}
+
+static int find_by_basename(const char *dir, const char *want,
+                            char *out, int outsz, int *budget)
+{
+    SceUID d;
+    SceIoDirent de;
+    int found = 0;
+
+    d = sceIoDopen(dir);
+    if (d < 0) return 0;
+    memset(&de, 0, sizeof(de));
+    while (!found && *budget > 0 && sceIoDread(d, &de) > 0) {
+        if (de.d_name[0] && !is_hidden(de.d_name)) {
+            char sub[MAX_PATH_LEN];
+            (*budget)--;
+            path_join(sub, sizeof(sub), dir, de.d_name);
+            if (is_dirent_dir(&de)) {
+                if (find_by_basename(sub, want, out, outsz, budget)) found = 1;
+            } else if (ci_cmp(de.d_name, want) == 0) {
+                scopy(out, outsz, sub);
+                found = 1;
+            }
+        }
+        memset(&de, 0, sizeof(de));
+    }
+    sceIoDclose(d);
+    return found;
 }
 
 static void add_playlist_track(Record *r, const char *base_dir,
@@ -227,6 +374,20 @@ static void add_playlist_track(Record *r, const char *base_dir,
     if (!t) return;
     if (looks_absolute(line)) scopy(t->path, MAX_PATH_LEN, line);
     else path_join(t->path, MAX_PATH_LEN, base_dir, line);
+
+    if (!file_exists(t->path)) {
+        char want[NAME_LEN];
+        char cand[MAX_PATH_LEN];
+        base_name(want, sizeof(want), line);
+        path_join(cand, sizeof(cand), base_dir, want);
+        if (file_exists(cand)) {
+            scopy(t->path, MAX_PATH_LEN, cand);
+        } else {
+            int budget = 3000;
+            if (find_by_basename(base_dir, want, cand, sizeof(cand), &budget))
+                scopy(t->path, MAX_PATH_LEN, cand);
+        }
+    }
 
     if (title && title[0]) scopy(t->title, NAME_LEN, title);
     else filename_title(t->title, NAME_LEN, t->path);
@@ -255,6 +416,12 @@ static void scan_playlist(Record *r, const char *plpath)
         char *nl = strpbrk(line, "\r\n");
         if (nl) *nl = '\0';
 
+        {
+            unsigned char *u = (unsigned char *)line;
+            if (u[0] == 0xEF && u[1] == 0xBB && u[2] == 0xBF)
+                memmove(line, line + 3, strlen(line + 3) + 1);
+        }
+
         if (is_pls) {
             if (ci_starts(line, "File")) {
                 char *eq = strchr(line, '=');
@@ -279,10 +446,20 @@ static void scan_playlist(Record *r, const char *plpath)
     }
     fclose(f);
 
-    if (r->track_count > 0) {
-        char tdir[MAX_PATH_LEN];
-        dir_of(tdir, sizeof(tdir), r->tracks[0].path);
-        find_cover_in_dir(tdir, r->cover_path, MAX_PATH_LEN);
+    r->cover_path[0] = '\0';
+    {
+        char cand[MAX_PATH_LEN];
+        const char *exts[3] = { "jpg", "jpeg", "png" };
+        int k, blen;
+        for (k = 0; k < 3; k++) {
+            FILE *cf;
+            scopy(cand, sizeof(cand), plpath);
+            strip_ext(cand);
+            blen = (int)strlen(cand);
+            snprintf(cand + blen, sizeof(cand) - blen, ".%s", exts[k]);
+            cf = fopen(cand, "rb");
+            if (cf) { fclose(cf); scopy(r->cover_path, MAX_PATH_LEN, cand); break; }
+        }
     }
 }
 
@@ -320,24 +497,19 @@ void library_init(Library *lib)
     memset(lib, 0, sizeof(*lib));
 }
 
-int library_scan(Library *lib, const char *root)
+static void scan_root(Library *lib, const char *root, Record *loose, int *have_loose)
 {
     SceUID d;
     SceIoDirent de;
-    Record loose;
-    int have_loose = 0;
-
-    library_free(lib);
-    library_init(lib);
-    memset(&loose, 0, sizeof(loose));
 
     d = sceIoDopen(root);
-    if (d < 0) { lib->scanned = 1; return 0; }
+    if (d < 0) return;
 
     memset(&de, 0, sizeof(de));
     while (sceIoDread(d, &de) > 0) {
         const char *nm = de.d_name;
-        if (!nm[0] || !strcmp(nm, ".") || !strcmp(nm, "..")) {
+
+        if (!nm[0] || is_hidden(nm)) {
             memset(&de, 0, sizeof(de));
             continue;
         }
@@ -347,8 +519,20 @@ int library_scan(Library *lib, const char *root)
             memset(&tmp, 0, sizeof(tmp));
             path_join(sub, sizeof(sub), root, nm);
             scan_album(&tmp, sub, nm);
-            if (tmp.track_count > 0) place_record(lib, &tmp);
-            else free(tmp.tracks);
+            if (tmp.track_count > 0) {
+                place_record(lib, &tmp);
+            } else {
+
+                FolderNode *root_node;
+                free(tmp.tracks);
+                root_node = push_node(&lib->trees, &lib->tree_count);
+                if (root_node) {
+                    if (!scan_folder_tree(root_node, sub, nm, 0)) {
+                        free(root_node->children);
+                        lib->tree_count--;
+                    }
+                }
+            }
         } else if (has_ext(nm, "m3u") || has_ext(nm, "m3u8") || has_ext(nm, "pls")) {
             char sub[MAX_PATH_LEN];
             Record tmp;
@@ -360,13 +544,13 @@ int library_scan(Library *lib, const char *root)
         } else if (has_ext(nm, "mp3")) {
 
             Track *t;
-            if (!have_loose) {
-                scopy(loose.name, NAME_LEN, "UNSORTED");
-                scopy(loose.path, MAX_PATH_LEN, root);
-                find_cover_in_dir(root, loose.cover_path, MAX_PATH_LEN);
-                have_loose = 1;
+            if (!*have_loose) {
+                scopy(loose->name, NAME_LEN, "UNSORTED");
+                scopy(loose->path, MAX_PATH_LEN, root);
+                find_cover_in_dir(root, loose->cover_path, MAX_PATH_LEN);
+                *have_loose = 1;
             }
-            if ((t = push_track(&loose)) != NULL) {
+            if ((t = push_track(loose)) != NULL) {
                 path_join(t->path, MAX_PATH_LEN, root, nm);
                 filename_title(t->title, NAME_LEN, nm);
             }
@@ -374,6 +558,20 @@ int library_scan(Library *lib, const char *root)
         memset(&de, 0, sizeof(de));
     }
     sceIoDclose(d);
+}
+
+int library_scan(Library *lib, const char *const *roots, int nroots)
+{
+    Record loose;
+    int have_loose = 0;
+    int i;
+
+    library_free(lib);
+    library_init(lib);
+    memset(&loose, 0, sizeof(loose));
+
+    for (i = 0; i < nroots; i++)
+        if (roots[i]) scan_root(lib, roots[i], &loose, &have_loose);
 
     if (have_loose && loose.track_count > 0) {
         if (loose.track_count > 1)
@@ -387,9 +585,11 @@ int library_scan(Library *lib, const char *root)
         qsort(lib->albums, lib->album_count, sizeof(Record), rec_cmp);
     if (lib->playlist_count > 1)
         qsort(lib->playlists, lib->playlist_count, sizeof(Record), rec_cmp);
+    if (lib->tree_count > 1)
+        qsort(lib->trees, lib->tree_count, sizeof(FolderNode), node_cmp);
 
     lib->scanned = 1;
-    return lib->album_count + lib->playlist_count;
+    return lib->album_count + lib->playlist_count + lib->tree_count;
 }
 
 void record_load_metadata(Record *r)
@@ -430,12 +630,29 @@ static void free_records(Record *arr, int n)
     free(arr);
 }
 
+static void free_node(FolderNode *n)
+{
+    int i;
+    for (i = 0; i < n->child_count; i++) free_node(&n->children[i]);
+    free(n->children);
+    if (n->record) { free(n->record->tracks); free(n->record); }
+}
+
+static void free_trees(FolderNode *arr, int n)
+{
+    int i;
+    for (i = 0; i < n; i++) free_node(&arr[i]);
+    free(arr);
+}
+
 void library_free(Library *lib)
 {
     if (!lib) return;
     free_records(lib->albums, lib->album_count);
     free_records(lib->playlists, lib->playlist_count);
+    free_trees(lib->trees, lib->tree_count);
     lib->albums = NULL;     lib->album_count = 0;
     lib->playlists = NULL;  lib->playlist_count = 0;
+    lib->trees = NULL;      lib->tree_count = 0;
     lib->scanned = 0;
 }

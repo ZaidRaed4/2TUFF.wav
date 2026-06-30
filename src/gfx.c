@@ -8,36 +8,23 @@
 #include <string.h>
 #include <math.h>
 
-/* gfx.c - thin 2D layer over the PSP GU.
- * We never draw directly: each sceGu* call just appends to a command list
- * (g_list) that the GU replays in hardware. begin_frame opens it, end_frame
- * runs it and flips. */
-
 #include "gfx.h"
 #include "theme.h"
 
-/* Screen is 480 wide, but stride must be a power of two, so rows pad to 512.
- * The extra 32 px/row are never shown. */
 #define BUF_W      512
 #define LIST_WORDS (256 * 1024)
 
-/* Command list, DMA'd by the GU -> has to be 16-byte aligned or it reads garbage. */
 static unsigned int __attribute__((aligned(16))) g_list[LIST_WORDS];
-static int g_fbp0, g_fbp1, g_zbp;   /* VRAM offsets: draw buf, display buf, depth */
+static int g_fbp0, g_fbp1, g_zbp;
 static unsigned int g_frame_ctr = 0;
-static float g_dt = 1.0f / 60.0f;   /* seconds elapsed during the last frame */
+static float g_dt = 1.0f / 60.0f;
 static int64_t g_last_us = 0;
 
-/* Field order is dictated by the GU_* flags, not us: position always last.
- * CVtx = colored, TVtx = textured (u,v first). Don't reorder these. */
 typedef struct { unsigned int color; float x, y, z; } CVtx;
 typedef struct { float u, v; unsigned int color; float x, y, z; } TVtx;
 
-/* GU wants VRAM offsets, not real pointers; this just casts one to the other. */
 static inline void *vrel(int off) { return (void *)(intptr_t)off; }
 
-/* Next power of two. PSP textures must be pow2, so a WxH image lives inside a
- * bigger tw x th and we sample only the WxH corner. */
 static int next_pow2(int x)
 {
     int p = 1;
@@ -47,8 +34,6 @@ static int next_pow2(int x)
 
 void gfx_init(void)
 {
-    /* carve VRAM into three: back buffer (draw), front buffer (shown), depth.
-     * 4 bytes/pixel, swapped every frame. Offsets, not pointers. */
     g_fbp0 = 0;
     g_fbp1 = BUF_W * SCR_H * 4;
     g_zbp  = g_fbp1 + BUF_W * SCR_H * 4;
@@ -60,16 +45,10 @@ void gfx_init(void)
     sceGuDispBuffer(SCR_W, SCR_H, vrel(g_fbp1), BUF_W);
     sceGuDepthBuffer(vrel(g_zbp), BUF_W);
 
-    /* GU space is centered on 2048 (12-bit guard band, 0..4095) so off-screen
-     * geometry still clips right. This pair just lands pixel (0,0) top-left.
-     * Mostly boilerplate. */
     sceGuOffset(2048 - (SCR_W / 2), 2048 - (SCR_H / 2));
     sceGuViewport(2048, 2048, SCR_W, SCR_H);
-
-    /* inverted depth range; we don't use depth, just keeping it consistent */
     sceGuDepthRange(65535, 0);
 
-    /* clip to the visible rect so nothing bleeds into the 512-stride padding */
     sceGuScissor(0, 0, SCR_W, SCR_H);
     sceGuEnable(GU_SCISSOR_TEST);
 
@@ -78,7 +57,6 @@ void gfx_init(void)
     sceGuDisable(GU_CULL_FACE);
     sceGuShadeModel(GU_SMOOTH);
 
-    /* standard alpha blend: src*a + dst*(1-a), for translucent UI */
     sceGuEnable(GU_BLEND);
     sceGuBlendFunc(GU_ADD, GU_SRC_ALPHA, GU_ONE_MINUS_SRC_ALPHA, 0, 0);
     sceGuEnable(GU_DITHER);
@@ -87,7 +65,6 @@ void gfx_init(void)
     sceGuTexFilter(GU_LINEAR, GU_LINEAR);
     sceGuTexWrap(GU_CLAMP, GU_CLAMP);
 
-    /* finish setup, wait for vblank, then enable display so frame 0 isn't garbage */
     sceGuFinish();
     sceGuSync(0, 0);
     sceDisplayWaitVblankStart();
@@ -170,6 +147,16 @@ void gfx_rect_outline(float x, float y, float w, float h, float t,
     gfx_quad(x, y + h - t, w, t, c);
     gfx_quad(x, y, t, h, c);
     gfx_quad(x + w - t, y, t, h, c);
+}
+
+void gfx_clip(int x, int y, int w, int h)
+{
+    sceGuScissor(x, y, w, h);
+}
+
+void gfx_clip_reset(void)
+{
+    sceGuScissor(0, 0, SCR_W, SCR_H);
 }
 
 void gfx_draw_background(float time)

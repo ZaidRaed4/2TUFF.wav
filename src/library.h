@@ -24,14 +24,25 @@ typedef struct {
     int  track_count;
 } Record;
 
+#define MAX_TREE_DEPTH 16
+typedef struct FolderNode {
+    char  name[NAME_LEN];
+    char  path[MAX_PATH_LEN];
+    struct FolderNode *children;
+    int   child_count;
+    Record *record;
+} FolderNode;
+
 typedef struct {
     Record *albums;     int album_count;
     Record *playlists;  int playlist_count;
+    FolderNode *trees;  int tree_count;
     int scanned;
 } Library;
 
 void library_init(Library *lib);
-int  library_scan(Library *lib, const char *root);
+
+int  library_scan(Library *lib, const char *const *roots, int nroots);
 void library_free(Library *lib);
 
 void record_load_metadata(Record *rec);

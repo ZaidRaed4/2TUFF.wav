@@ -1,3 +1,7 @@
+# 2TUFF.wav - PSP homebrew music player
+# Canonical PSPSDK Makefile (requires `make` + the pspdev toolchain on PATH).
+# If you don't have `make`, use ./build.sh instead - it does the same steps.
+
 TARGET = 2TUFFwav
 OBJS = $(patsubst %.c,%.o,$(wildcard src/*.c))
 
@@ -8,7 +12,8 @@ ASFLAGS  = $(CFLAGS)
 
 LIBDIR =
 LDFLAGS =
-LIBS = -lpspgu -lpspmp3 -lpspaudio -lpsputility -lpsppower -ljpeg -lm
+# App + portlib (libjpeg/libpng/zlib) libraries; build.mak appends the base SDK libs last.
+LIBS = -lpspgu -lpspmp3 -lpspaudio -lpsputility -lpsppower -ljpeg -lpng16 -lz -lm
 
 EXTRA_TARGETS = EBOOT.PBP
 PSP_EBOOT_TITLE = 2TUFF.wav

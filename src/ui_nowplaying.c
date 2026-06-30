@@ -10,17 +10,21 @@
 #include "widgets.h"
 #include "glyphs.h"
 #include "audio.h"
+#include "viz.h"
 
 #define ANIM_DUR  0.45f
+#define VIEW_ANIM_DUR 0.30f
 
 #define ART_CX 240
 #define ART_CY 117
 #define ART_SZ (7 * GRID)
 
+#define NP_MAIN_Y   GY(2)
+#define NP_MAIN_H   (GY(11) - GY(2))
+
 #if LYRICS_ENABLED
 
 #define ART_CX_LEFT  (PAD + ART_SZ / 2)
-#define LYR_ANIM_DUR 0.30f
 #define LYR_X        (ART_CX_LEFT + ART_SZ / 2 + GRID)
 #define LYR_PITCH    GRID
 #define LYR_SPAN     3
@@ -53,13 +57,13 @@ static void scrub_end(void)
     audio_seek((int)g_app.scrub_ms);
 }
 
-#if LYRICS_ENABLED
-
 static unsigned int fade(unsigned int col, float a)
 {
     unsigned int al = (unsigned int)(((col >> 24) & 0xFFu) * a);
     return (col & 0x00FFFFFFu) | (al << 24);
 }
+
+#if LYRICS_ENABLED
 
 static int lyr_wrap(const char *s, int maxw, char rows[LYR_ROW_MAX][128])
 {
@@ -150,10 +154,10 @@ static void draw_lyrics_panel(float la)
 }
 #endif
 
-static void corner(int x, int y, int dx, int dy)
+static void corner(int x, int y, int dx, int dy, unsigned int col)
 {
-    gfx_quad((float)x, (float)y, (float)(dx * 12), 2, TH.accent);
-    gfx_quad((float)x, (float)y, 2, (float)(dy * 12), TH.accent);
+    gfx_quad((float)x, (float)y, (float)(dx * 12), 2, col);
+    gfx_quad((float)x, (float)y, 2, (float)(dy * 12), col);
 }
 
 void scr_nowplaying(void)
@@ -190,13 +194,30 @@ void scr_nowplaying(void)
     if (PRESSED(PSP_CTRL_START))  { scrub_end(); audio_toggle_pause(); }
 #if LYRICS_ENABLED
 
-    if (PRESSED(PSP_CTRL_TRIANGLE)) g_app.lyrics_view = !g_app.lyrics_view;
+    if (PRESSED(PSP_CTRL_TRIANGLE))
+        g_app.np_view = (g_app.np_view == NP_VIEW_LYRICS) ? NP_VIEW_COVER
+                                                          : NP_VIEW_LYRICS;
+#endif
+#if VIZ_ENABLED
+
+    if (PRESSED(PSP_CTRL_SQUARE)) {
+        if (g_app.np_view != NP_VIEW_VIZ) {
+            g_app.np_view   = NP_VIEW_VIZ;
+            g_app.viz_style = 0;
+        } else if (g_app.viz_style + 1 < VIZ_STYLE_COUNT) {
+            g_app.viz_style++;
+        } else {
+            g_app.np_view = NP_VIEW_COVER;
+        }
+    }
 #endif
 
     if (PRESSED(PSP_CTRL_LTRIGGER)) {
-        if (g_app.np_index > 0 && g_app.l_replay_t > 0.0f &&
+        int can_prev = g_app.shuffle ? (r->track_count > 1) : (g_app.np_index > 0);
+        if (can_prev && g_app.l_replay_t > 0.0f &&
             (g_app.time - g_app.l_replay_t) <= L_DOUBLE_S) {
-            start_play(g_app.np_index - 1, 1, 0);
+            start_play(g_app.shuffle ? prev_track_index(g_app.np_index)
+                                     : g_app.np_index - 1, 1, 0);
             g_app.l_replay_t = 0.0f;
         } else {
             start_play(g_app.np_index, 1, 0);
@@ -235,20 +256,26 @@ void scr_nowplaying(void)
         g_app.np_anim += dt / ANIM_DUR;
         if (g_app.np_anim > 1.0f) g_app.np_anim = 1.0f;
     }
-#if LYRICS_ENABLED
 
     {
-        float target = g_app.lyrics_view ? 1.0f : 0.0f;
-        float step   = dt / LYR_ANIM_DUR;
-        if (g_app.lyrics_anim < target) {
+        float step = dt / VIEW_ANIM_DUR;
+        float lt = (g_app.np_view == NP_VIEW_LYRICS) ? 1.0f : 0.0f;
+        float vt = (g_app.np_view == NP_VIEW_VIZ)    ? 1.0f : 0.0f;
+        if (g_app.lyrics_anim < lt) {
             g_app.lyrics_anim += step;
-            if (g_app.lyrics_anim > target) g_app.lyrics_anim = target;
-        } else if (g_app.lyrics_anim > target) {
+            if (g_app.lyrics_anim > lt) g_app.lyrics_anim = lt;
+        } else if (g_app.lyrics_anim > lt) {
             g_app.lyrics_anim -= step;
-            if (g_app.lyrics_anim < target) g_app.lyrics_anim = target;
+            if (g_app.lyrics_anim < lt) g_app.lyrics_anim = lt;
+        }
+        if (g_app.viz_anim < vt) {
+            g_app.viz_anim += step;
+            if (g_app.viz_anim > vt) g_app.viz_anim = vt;
+        } else if (g_app.viz_anim > vt) {
+            g_app.viz_anim -= step;
+            if (g_app.viz_anim < vt) g_app.viz_anim = vt;
         }
     }
-#endif
 
     if (g_app.scrub_dir > 0)      { status = "SKIM >>"; status_col = TH.accent; }
     else if (g_app.scrub_dir < 0) { status = "<< SKIM"; status_col = TH.accent; }
@@ -270,28 +297,53 @@ void scr_nowplaying(void)
     ui_rule(0, GY(2), SCR_W);
 
     {
-        float restcx = ART_CX;
-#if LYRICS_ENABLED
+        char err[48];
+        if (audio_last_error(err, sizeof(err)))
+            text_put(F_SM, PAD, GY(2) + 6, TH.accent, err);
+    }
+
+    {
         float la = smoothstep01(g_app.lyrics_anim);
-        restcx = ART_CX + (ART_CX_LEFT - ART_CX) * la;
-#endif
-        half = ART_SZ / 2 + 6;
-        corner((int)restcx - half, ART_CY - half,  1,  1);
-        corner((int)restcx + half, ART_CY - half, -1,  1);
-        corner((int)restcx - half, ART_CY + half,  1, -1);
-        corner((int)restcx + half, ART_CY + half, -1, -1);
+        float va = smoothstep01(g_app.viz_anim);
+        float coverA = 1.0f - va;
 
-        a  = smoothstep01(g_app.np_anim);
-        cx = (SCR_W - 64.0f) + (restcx - (SCR_W - 64.0f)) * a;
-        cy = 58.0f + (ART_CY - 58.0f) * a;
-        sz = 64.0f + (ART_SZ - 64.0f) * a;
-        if (g_app.rec_tex)
-            gfx_blit_nn(g_app.rec_tex, cx - sz * 0.5f, cy - sz * 0.5f, sz, sz,
-                        RGB(255, 255, 255));
+#if VIZ_ENABLED
+
+        if (va > 0.001f)
+            viz_render(0, NP_MAIN_Y, SCR_W, NP_MAIN_H, dt,
+                       audio_level(), audio_bass(), va, g_app.viz_style);
+#endif
+
+        if (coverA > 0.001f) {
+            float restcx = ART_CX;
+            unsigned int cc = fade(TH.accent, coverA);
+#if LYRICS_ENABLED
+            restcx = ART_CX + (ART_CX_LEFT - ART_CX) * la;
+#endif
+
+            half = ART_SZ / 2 + 6;
+            corner((int)restcx - half, ART_CY - half,  1,  1, cc);
+            corner((int)restcx + half, ART_CY - half, -1,  1, cc);
+            corner((int)restcx - half, ART_CY + half,  1, -1, cc);
+            corner((int)restcx + half, ART_CY + half, -1, -1, cc);
+
+            a  = smoothstep01(g_app.np_anim);
+            cx = (SCR_W - 64.0f) + (restcx - (SCR_W - 64.0f)) * a;
+            cy = 58.0f + (ART_CY - 58.0f) * a;
+            sz = 64.0f + (ART_SZ - 64.0f) * a;
+
+            {
+                Texture *cover = (r->is_playlist && g_app.np_tex) ? g_app.np_tex
+                                                                  : g_app.rec_tex;
+                if (cover)
+                    gfx_blit_nn(cover, cx - sz * 0.5f, cy - sz * 0.5f, sz, sz,
+                                fade(RGB(255, 255, 255), coverA));
+            }
 
 #if LYRICS_ENABLED
-        if (la > 0.001f) draw_lyrics_panel(la);
+            if (la > 0.001f) draw_lyrics_panel(la * coverA);
 #endif
+        }
     }
 
     y0 = GY(11);

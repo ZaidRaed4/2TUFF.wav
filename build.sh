@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
+# 2TUFF.wav - make-free build script.
+# Compiles src/*.c with psp-gcc and packages an EBOOT.PBP using the pspdev
+# toolchain. Run inside WSL (or any Linux with pspdev installed).
 set -euo pipefail
 
 export PSPDEV="${PSPDEV:-$HOME/pspdev}"
 export PATH="$PSPDEV/bin:$PATH"
 
+# psp-gcc's cc1 needs libmpc.so.3, which a stock Ubuntu/WSL may not ship.
+# Stage it locally (no sudo) and expose it via LD_LIBRARY_PATH so the build is
+# reproducible without touching the system. Falls back to an apt hint.
 EXTRA_LIB="$HOME/pspdev-extra/usr/lib/x86_64-linux-gnu"
 if [ ! -e /usr/lib/x86_64-linux-gnu/libmpc.so.3 ] && [ ! -e "$EXTRA_LIB/libmpc.so.3" ]; then
     echo ">> staging libmpc3 (psp-gcc host dependency, no sudo)"
@@ -28,7 +34,9 @@ mkdir -p build "dist/PSP/GAME/$TARGET"
 CFLAGS="-G0 -O2 -Wall -Wno-format-truncation -fno-strict-aliasing -D_PSP_FW_VERSION=600 \
   -I$ROOT/src -I$PSPDEV/psp/include -I$PSPSDK/include"
 LDFLAGS="-L$PSPDEV/psp/lib -L$PSPSDK/lib -Wl,-zmax-page-size=128"
-LIBS="-lpspgu -lpspmp3 -lpspaudio -lpsputility -lpsppower -ljpeg -lm \
+# Order matters for psp-fixup-imports: our app/portlibs first, the standard
+# SDK stub libraries last (matching $(PSPSDK)/lib/build.mak).
+LIBS="-lpspgu -lpspmp3 -lpspaudio -lpsputility -lpsppower -ljpeg -lpng16 -lz -lm \
   -lpspdebug -lpspdisplay -lpspge -lpspctrl -lpspnet -lpspnet_apctl"
 
 echo ">> compiling"
@@ -53,6 +61,7 @@ ICON="NULL"
 PIC1="NULL"
 [ -f assets/PIC1.PNG ] && PIC1="assets/PIC1.PNG"
 
+# pack-pbp slot order: PARAM.SFO ICON0 ICON1 PIC0 PIC1 SND0 DATA.PSP DATA.PSAR
 pack-pbp "build/EBOOT.PBP" \
     "build/PARAM.SFO" "$ICON" NULL NULL "$PIC1" NULL \
     "build/${TARGET}_strip.elf" NULL

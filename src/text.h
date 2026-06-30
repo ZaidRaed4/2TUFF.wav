@@ -15,6 +15,8 @@ int  font_ch(Font f);
 int  text_w(Font f, const char *s);
 
 void text_put(Font f, int x, int y, unsigned int col, const char *s);
+
+void text_put_scaled(Font f, int x, int y, unsigned int col, const char *s, float scale);
 void text_put_center(Font f, int cx, int y, unsigned int col, const char *s);
 void text_put_right(Font f, int x_right, int y, unsigned int col, const char *s);
 

@@ -4,6 +4,7 @@
 #include <math.h>
 #include <setjmp.h>
 #include <jpeglib.h>
+#include <png.h>
 
 #include "image.h"
 #include "theme.h"
@@ -51,13 +52,11 @@ static void dither_tex(Texture *t)
     }
 }
 
-static Texture *finish_decode(struct jpeg_decompress_struct *cinfo,
-                              unsigned char *rgb, int dw, int dh, int size)
+static Texture *finish_decode(unsigned char *rgb, int dw, int dh, int size)
 {
     Texture *t;
     int crop, ox, oy, y, x;
 
-    (void)cinfo;
     crop = (dw < dh) ? dw : dh;
     if (crop <= 0) return NULL;
     ox = (dw - crop) / 2;
@@ -132,7 +131,7 @@ static Texture *decode_common(struct jpeg_decompress_struct *cinfo, int size)
     }
     jpeg_finish_decompress(cinfo);
 
-    tex = finish_decode(cinfo, rgb, dw, dh, size);
+    tex = finish_decode(rgb, dw, dh, size);
     free(rgb);
     return tex;
 }
@@ -187,6 +186,71 @@ Texture *image_load_jpeg_mem(const unsigned char *buf, unsigned long len,
     tex = decode_common(&cinfo, size);
     jpeg_destroy_decompress(&cinfo);
     return tex;
+}
+
+static Texture *png_decode(png_image *img, int size)
+{
+    unsigned char *rgb;
+    Texture *t;
+
+    img->format = PNG_FORMAT_RGB;
+    rgb = (unsigned char *)malloc(PNG_IMAGE_SIZE(*img));
+    if (!rgb) { png_image_free(img); return NULL; }
+
+    if (!png_image_finish_read(img, NULL, rgb, 0, NULL)) {
+        free(rgb); png_image_free(img); return NULL;
+    }
+    t = finish_decode(rgb, (int)img->width, (int)img->height, size);
+    free(rgb);
+    png_image_free(img);
+    return t;
+}
+
+static Texture *image_load_png_mem(const unsigned char *buf, unsigned long len,
+                                   int size)
+{
+    png_image img;
+    memset(&img, 0, sizeof(img));
+    img.version = PNG_IMAGE_VERSION;
+    if (!png_image_begin_read_from_memory(&img, buf, len)) return NULL;
+    return png_decode(&img, size);
+}
+
+static Texture *image_load_png_file(const char *path, int size)
+{
+    png_image img;
+    memset(&img, 0, sizeof(img));
+    img.version = PNG_IMAGE_VERSION;
+    if (!png_image_begin_read_from_file(&img, path)) return NULL;
+    return png_decode(&img, size);
+}
+
+Texture *image_load_cover_mem(const unsigned char *buf, unsigned long len,
+                              int size)
+{
+    if (!buf || len < 4) return NULL;
+    if (buf[0] == 0x89 && buf[1] == 'P' && buf[2] == 'N' && buf[3] == 'G')
+        return image_load_png_mem(buf, len, size);
+    if (buf[0] == 0xFF && buf[1] == 0xD8)
+        return image_load_jpeg_mem(buf, len, size);
+    return NULL;
+}
+
+Texture *image_load_cover_file(const char *path, int size)
+{
+    unsigned char sig[4];
+    FILE *fp;
+    size_t n;
+
+    if (!path || !path[0]) return NULL;
+    fp = fopen(path, "rb");
+    if (!fp) return NULL;
+    n = fread(sig, 1, 4, fp);
+    fclose(fp);
+
+    if (n >= 4 && sig[0] == 0x89 && sig[1] == 'P' && sig[2] == 'N' && sig[3] == 'G')
+        return image_load_png_file(path, size);
+    return image_load_jpeg_file(path, size);
 }
 
 Texture *image_make_placeholder(int size, unsigned int seed)

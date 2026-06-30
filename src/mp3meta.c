@@ -33,6 +33,7 @@ int mp3_estimate_duration_sec(const char *path)
 
     if (fread(hdr, 1, 10, f) == 10 &&
         hdr[0] == 'I' && hdr[1] == 'D' && hdr[2] == '3') {
+        /* ID3v2 tag size is a 28-bit sync-safe int (high bit of each byte is 0) */
         start = 10 + (((long)(hdr[6] & 0x7f) << 21) |
                       ((hdr[7] & 0x7f) << 14) |
                       ((hdr[8] & 0x7f) << 7) |

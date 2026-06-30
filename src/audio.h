@@ -27,4 +27,12 @@ float audio_progress(void);
 int   audio_finished(void);
 void  audio_clear_finished(void);
 
+float audio_level(void);
+float audio_bass(void);
+
+#define AUDIO_BANDS 16
+int   audio_bands(float *out, int n);
+
+int   audio_last_error(char *out, int n);
+
 #endif

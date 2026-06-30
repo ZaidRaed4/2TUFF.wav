@@ -9,6 +9,7 @@
 #define RGB(r, g, b) RGBA(r, g, b, 255)
 
 typedef struct {
+    const char  *name;
     unsigned int bg;
     unsigned int panel;
     unsigned int ink;
@@ -27,11 +28,14 @@ typedef struct {
     int          cover_invert;
 } Theme;
 
-typedef enum { THEME_PAPER = 0, THEME_TERMINAL = 1 } ThemeId;
+typedef enum {
+    THEME_PAPER = 0, THEME_TERMINAL = 1, THEME_CALLA = 2, THEME_LEATHER = 3
+} ThemeId;
+#define THEME_COUNT 4
 
 #define ACTIVE_THEME THEME_PAPER
 
-extern const Theme  THEME_TABLE[2];
+extern const Theme  THEME_TABLE[THEME_COUNT];
 extern const Theme *g_theme;
 void    theme_set(ThemeId id);
 ThemeId theme_current(void);

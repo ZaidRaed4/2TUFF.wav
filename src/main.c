@@ -16,7 +16,8 @@ PSP_MODULE_INFO("2TUFFwav", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 PSP_HEAP_SIZE_KB(-1024);
 
-#define MUSIC_ROOT "ms0:/MUSIC"
+static const char *const MUSIC_ROOTS[] = { "ms0:/MUSIC", "ef0:/MUSIC" };
+#define NUM_MUSIC_ROOTS ((int)(sizeof(MUSIC_ROOTS) / sizeof(MUSIC_ROOTS[0])))
 
 static volatile int g_running = 1;
 
@@ -52,7 +53,9 @@ int main(int argc, char *argv[])
 
     gfx_init();
     text_init();
-    audio_init();
+    if (audio_init() < 0) {
+
+    }
     config_init(argc > 0 ? argv[0] : 0);
     config_load();
 
@@ -60,13 +63,13 @@ int main(int argc, char *argv[])
     g_app.screen = SCREEN_LIBRARY;
     g_app.mode = MODE_ALBUMS;
     g_app.preview_for = -1;
-    library_scan(&g_app.lib, MUSIC_ROOT);
+    library_scan(&g_app.lib, MUSIC_ROOTS, NUM_MUSIC_ROOTS);
 
     while (g_running) {
         SceCtrlData pad;
         sceCtrlReadBufferPositive(&pad, 1);
         g_held = pad.Buttons;
-        g_pressed = g_held & ~g_app.btn_prev;
+        g_pressed = g_held & ~g_app.btn_prev;   /* edge-detect: buttons pressed just this frame */
         g_app.btn_prev = g_held;
 
         g_app.time += gfx_dt();
@@ -89,6 +92,7 @@ int main(int argc, char *argv[])
     if (g_app.preview_tex)   tex_free(g_app.preview_tex);
     if (g_app.rec_tex)       tex_free(g_app.rec_tex);
     if (g_app.rec_thumb_tex) tex_free(g_app.rec_thumb_tex);
+    if (g_app.np_tex)        tex_free(g_app.np_tex);
     library_free(&g_app.lib);
     text_shutdown();
     gfx_shutdown();

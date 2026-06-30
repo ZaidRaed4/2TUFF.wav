@@ -2,6 +2,9 @@
 build/
 dist/
 
+# Release artifacts
+2tuff-wav-eboot.zip
+
 # Compiled objects / binaries
 *.o
 *.a

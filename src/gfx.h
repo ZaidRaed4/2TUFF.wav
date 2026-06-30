@@ -25,6 +25,9 @@ void gfx_rect_outline(float x, float y, float w, float h, float t,
                       unsigned int color);
 void gfx_hline(float x, float y, float w, float thick, unsigned int color);
 
+void gfx_clip(int x, int y, int w, int h);
+void gfx_clip_reset(void);
+
 void gfx_draw_background(float time);
 
 Texture *tex_create(int w, int h);

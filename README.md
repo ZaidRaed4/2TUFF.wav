@@ -50,10 +50,12 @@ I'm still figuring out the next steps, so any feedback or suggestions would be a
 
    scanning mechanism:
    - one folder per album, or
+   - nested folders (like `Artist/Year/Album`) show up under the **TREES** tab, or
    - `.m3u` / `.m3u8` / `.pls` playlist files, or
    - just dump loose `.mp3` files in there and theyll show up under `UNSORTED`.
 
-   You can mix all three.
+   You can mix all of them. hidden/dot junk like macOS `._` files is skipped now,
+   so it wont show up as phantom 0:00 tracks or mess up the cover art.
 
 3. Launch **2TUFF.wav** from the PSP's Game menu.
 
@@ -65,10 +67,14 @@ to reset them, just delete that file.
 
 **COVER ART** 
   Drop a JPEG named `cover.jpg`, `folder.jpg`, `front.jpg` or
-  `albumart.jpg` into an album folder and it'll get picked up. If there isn't
-  one, the app falls back to the artwork embedded in the first track's ID3 tag,
-  and if there's none of that either it draws a generated placeholder. Note it
-  only reads **JPEG** covers (embedded PNG art is ignored).
+  `albumart.jpg` into an album folder and it'll get picked up — that one cover
+  now shows for **every** track in the album, even the ones with no art of their
+  own. If there's no folder cover it falls back to a track's embedded art, and if
+  there's none of that either it draws a generated placeholder. Playlists work a
+  little differently: they only show a cover you actually give them (a JPEG named
+  like the playlist, `My Mix.m3u` -> `My Mix.jpg`), and while a playlist plays
+  each song shows its **own** embedded art. Note it only reads **JPEG** covers
+  (embedded PNG art is ignored).
 
 
 **SYNCED LYRICS** 
@@ -77,12 +83,21 @@ to reset them, just delete that file.
   screen, highlighting the current line. Standard `[mm:ss.xx]` timestamps, and
   an `[offset:...]` tag is honored if it's there.
 
+
+**VISUALIZER** 
+  On the Now Playing screen, Square swaps the cover for a full-screen visualizer
+  that moves with the music. Hit Square again to cycle the three styles — FIELD
+  (a rippling dot grid), BLOBS (flowing metaball blobs) and ASCII (a spectrum-EQ
+  of rising glyph columns) — and once more to drop back to the cover. It's all
+  drawn in the current theme's ink with the same dithered look as everything else.
+
 ## Controls
 
 **Library**
 - Up / Down to move, Left / Right to jump a page
-- Square switches between Albums and Playlists
-- Cross (X) opens the highlighted album/playlist
+- Square cycles Albums / Playlists / Trees
+- Cross (X) opens the highlighted album/playlist. On Trees it opens the folder —
+  drill in with Cross / Right, step back out with Circle / Left.
 - Triangle opens Settings, Select opens the Controls reference
 
 **Track list**
@@ -95,6 +110,7 @@ to reset them, just delete that file.
 - L: replay from the start. Tap L twice quickly to go to the previous track.
 - R: next track (a random one if Shuffle is on)
 - Triangle: show/hide lyrics
+- Square: cycle the visualizer (FIELD / BLOBS / ASCII, then back to the cover)
 - Circle: back to the track list
 
 ## Building it yourself
@@ -222,20 +238,27 @@ there's no callback tangle.
 
 `library.c` walks `ms0:/MUSIC/` once at startup. The rules are simple:
 
-- A **sub-folder** is treated as one record. It collects the `.mp3` files inside
-  and looks for a cover image.
+- A **sub-folder** with loose tracks in it is treated as one record. It collects
+  the `.mp3` files inside and looks for a cover image.
+- A top-level folder that has *no* loose tracks but does contain sub-folders is
+  scanned recursively and shows up under the **Trees** tab — a browsable folder
+  tree where any folder that directly holds `.mp3`s is a playable leaf.
 - An `.m3u` / `.m3u8` / `.pls` file becomes a **playlist** record. It parses the
   entries (handling `#EXTINF` titles for M3U and `File=`/`Title=` lines for PLS),
   and resolves relative paths against the playlist's own folder.
 - Any **loose `.mp3`** sitting directly in `MUSIC/` gets lumped into a single
   record called `UNSORTED`.
+- Hidden/dot entries are skipped everywhere — the macOS `._` AppleDouble files,
+  `.Trashes`, etc. — so they cant sneak in as phantom 0:00 tracks or win the
+  cover-art pick.
 
 The "album vs. playlist" split is the one slightly clever bit. After a folder is
 collected, it peeks at the ID3 album tag of up to the first 16 tracks. If they
 all share the same album, it's filed as an **Album**. If they disagree, it's
-treated as a **Playlist** instead (a folder of random singles, basically). So
-the Albums/Playlists toggle in the UI reflects what your tags actually say, not
-just whether something was a folder or a `.m3u`.
+treated as a **Playlist** instead (a folder of random singles, basically) — and
+each Tree leaf gets classified the same way. So the Albums/Playlists toggle in
+the UI reflects what your tags actually say, not just whether something was a
+folder or a `.m3u`.
 
 Cover art inside a folder is chosen by a small ranking: a file starting with
 `cover` beats `folder`, which beats `front`/`albumart`. Records get sorted by
@@ -304,8 +327,9 @@ string won't fit.
 
 ### Themes, settings, lyrics
 
-`theme.c` is just two color palettes ("paper" light and "terminal" dark) as a
-struct of colors, with a global pointer you can flip. `config.c` reads and writes
+`theme.c` is just four color palettes ("paper" light, "terminal" dark, "calla"
+pink and "leather" brown) as a struct of colors, with a global pointer you can
+flip. `config.c` reads and writes
 the tiny `settings.cfg` (plain `key=value` lines for theme/font/cover) next to
 the EBOOT; it figures out that path from `argv[0]`. `lyrics.c` parses `.lrc`
 files into timestamped lines, strips inline `<...>` word tags, sorts by time, and
@@ -319,17 +343,18 @@ layout and input handling, with `widgets.c` providing the reusable pieces (rules
 the block-character progress meter, chips, key/value rows) and `controls.c`
 drawing the PSP face/d-pad buttons procedurally rather than from images. The
 animations (the cover flying into the viewfinder on Now Playing, the Settings and
-Controls drawers sliding in, the lyrics panel) are all just timers eased with a
-`smoothstep` and driven by `dt`.
+Controls drawers sliding in, the lyrics panel, and the reactive visualizer in
+`viz.c`) are all just timers eased with a `smoothstep` and driven by `dt`.
 
 ## Project layout
 
 ```
-src/        all the C source and headers (see "How it works" for what's what)
-assets/     ICON0.PNG (XMB icon) and PIC1.PNG (XMB background)
-licenses/   SIL OFL text for the two bundled fonts
-Makefile    build via the standard PSPSDK rules
-build.sh    build via a plain shell script (Linux/WSL)
+src/         all the C source and headers (see "How it works" for what's what)
+assets/      ICON0.PNG (XMB icon) and PIC1.PNG (XMB background)
+screenshots/ the shots shown at the top of this README
+licenses/    SIL OFL text for the two bundled fonts
+Makefile     build via the standard PSPSDK rules
+build.sh     build via a plain shell script (Linux/WSL)
 ```
 
 ## Known limitations 

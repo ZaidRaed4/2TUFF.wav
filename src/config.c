@@ -7,6 +7,7 @@
 #include "theme.h"
 #include "text.h"
 #include "image.h"
+#include "app.h"
 
 static char g_cfg_path[256] = "ms0:/PSP/GAME/2TUFFwav/settings.cfg";
 
@@ -44,20 +45,22 @@ void config_load(void)
     if (n <= 0) return;
     buf[n] = '\0';
 
-    if (read_kv(buf, "theme=", &v) && (v == THEME_PAPER || v == THEME_TERMINAL))
+    if (read_kv(buf, "theme=", &v) && v >= 0 && v < THEME_COUNT)
         theme_set((ThemeId)v);
     if (read_kv(buf, "font=", &v) && (v == FACE_PLEX || v == FACE_PIXEL))
         text_set_face((FontFace)v);
     if (read_kv(buf, "cover=", &v))
         image_set_dither(v);
+    if (read_kv(buf, "view=", &v) && (v == LIBVIEW_LIST || v == LIBVIEW_SHELF))
+        libview_set((LibView)v);
 }
 
 void config_save(void)
 {
     char buf[64];
-    int len = snprintf(buf, sizeof(buf), "theme=%d\nfont=%d\ncover=%d\n",
+    int len = snprintf(buf, sizeof(buf), "theme=%d\nfont=%d\ncover=%d\nview=%d\n",
                        (int)theme_current(), (int)text_current_face(),
-                       image_dither());
+                       image_dither(), (int)libview_current());
     SceUID fd = sceIoOpen(g_cfg_path,
                           PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
 

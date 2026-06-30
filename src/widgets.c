@@ -123,3 +123,26 @@ int ui_chip(Font f, int x, int y, const char *s, unsigned int fill, unsigned int
     text_put(f, x + padx, y, ink, s);
     return w;
 }
+
+void ui_folder_icon(int x, int y, int s, unsigned int col)
+{
+    int tabw = s * 9 / 20;
+    int tabh = s * 4 / 20;
+    int by, bh, i, j;
+    if (tabh < 3) tabh = 3;
+    by = y + tabh;
+    bh = s - tabh;
+
+    gfx_rect_outline((float)x, (float)y, (float)tabw, (float)(tabh + 2), 1.0f, col);
+    gfx_rect_outline((float)x, (float)by, (float)s, (float)bh, 1.0f, col);
+
+    if (s >= 26) {
+        int x0 = x + 3, x1 = x + s - 3;
+        int y0 = by + 3, y1 = by + bh - 3;
+        for (j = y0; j < y1; j += 3) {
+            int off = (((j - y0) / 3) & 1) ? 2 : 0;
+            for (i = x0 + off; i < x1; i += 4)
+                gfx_quad((float)i, (float)j, 1.5f, 1.5f, col);
+        }
+    }
+}

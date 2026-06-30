@@ -24,4 +24,6 @@ void ui_frame(int x, int y, int w, int h);
 
 int  ui_chip(Font f, int x, int y, const char *s, unsigned int fill, unsigned int ink);
 
+void ui_folder_icon(int x, int y, int s, unsigned int col);
+
 #endif
