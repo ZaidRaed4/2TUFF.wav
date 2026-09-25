@@ -46,7 +46,7 @@ I'm still figuring out the next steps, so any feedback or suggestions would be a
 2. Put your music under `ms0:/MUSIC/`.
    How you lay it out is up to you, and the app figures out the rest on launch
    ***NOTE: there is no reording items feature. the app orders tracks as they is in ms0:/MUSIC/
-   || you can reorder your own folder by adding 001,002,...00n before the track name as it will be hidden when displayed on the hardware
+   || you can reorder your own folders by adding 001,002,...00n before the track name as it will be hidden when displayed on the hardware
 
    scanning mechanism:
    - one folder per album, or
@@ -59,9 +59,13 @@ I'm still figuring out the next steps, so any feedback or suggestions would be a
 
 3. Launch **2TUFF.wav** from the PSP's Game menu.
 
-Your settings (theme, font, cover style) get written to a `settings.cfg` file
-right next to the EBOOT, so they stick around between launches. If you ever want
-to reset them, just delete that file.
+Your settings (theme, font, cover style, and the LIST/SHELF library view) get
+written to a `settings.cfg` file right next to the EBOOT, so they stick around
+between launches. Two more files show up there too: `favorites.dat` (your saved
+favorites) and `meta.cache` (cached track titles/artists/durations so they don't
+have to be re-read from the MP3s every launch). To reset anything, just delete
+the file — dumping `meta.cache` only forces a fresh scan, and dumping
+`favorites.dat` clears your favorites.
 
 ### Optional extras
 
@@ -91,6 +95,13 @@ to reset them, just delete that file.
   of rising glyph columns) — and once more to drop back to the cover. It's all
   drawn in the current theme's ink with the same dithered look as everything else.
 
+
+**FAVORITES** 
+  Hit **Select** on any track — in a track list or on the Now Playing screen — to
+  favorite it, and again to unfavorite. Everything you star gets gathered into a
+  **Favorites** list that shows up automatically at the top of your library, and
+  it's saved to a `favorites.dat` file next to the EBOOT so it survives a reboot.
+
 ## Controls
 
 **Library**
@@ -102,6 +113,7 @@ to reset them, just delete that file.
 
 **Track list**
 - Circle goes back
+- Select: favorite / unfavorite the highlighted track
 - L + Square toggles Shuffle
 
 **Now Playing**
@@ -111,6 +123,7 @@ to reset them, just delete that file.
 - R: next track (a random one if Shuffle is on)
 - Triangle: show/hide lyrics
 - Square: cycle the visualizer (FIELD / BLOBS / ASCII, then back to the cover)
+- Select: favorite / unfavorite the current track
 - Circle: back to the track list
 
 ## Building it yourself
@@ -268,7 +281,9 @@ To keep the initial scan fast, full per-track metadata (artist, durations,
 proper titles) is **not** read up front. That happens lazily the moment you open
 a record — `record_load_metadata` reads each track's tags then, sets the album
 artist (or "VARIOUS ARTISTS" if they differ), grabs the year, and estimates
-durations. Until then the list just shows filenames.
+durations. Until then the list just shows filenames. Those results are also
+cached to `meta.cache` (`metacache.c`), so reopening a record — or relaunching
+the app — reuses them instead of re-reading every track's tags.
 
 ### Reading tags
 
@@ -327,10 +342,11 @@ string won't fit.
 
 ### Themes, settings, lyrics
 
-`theme.c` is just four color palettes ("paper" light, "terminal" dark, "calla"
-pink and "leather" brown) as a struct of colors, with a global pointer you can
+`theme.c` is just seven color palettes ("paper" light, "terminal" dark, "calla"
+pink, "leather" brown, "mustard" olive, "earl grey" grey and "zushi"
+red-on-white) as a struct of colors, with a global pointer you can
 flip. `config.c` reads and writes
-the tiny `settings.cfg` (plain `key=value` lines for theme/font/cover) next to
+the tiny `settings.cfg` (plain `key=value` lines for theme/font/cover/view) next to
 the EBOOT; it figures out that path from `argv[0]`. `lyrics.c` parses `.lrc`
 files into timestamped lines, strips inline `<...>` word tags, sorts by time, and
 uses a binary search to find which line is active for the current playback

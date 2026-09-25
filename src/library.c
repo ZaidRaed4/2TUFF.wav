@@ -7,6 +7,7 @@
 #include "library.h"
 #include "id3.h"
 #include "mp3meta.h"
+#include "metacache.h"
 
 #define MAX_TRACKS_PER_RECORD 4000
 
@@ -602,25 +603,45 @@ void record_load_metadata(Record *r)
 
     for (i = 0; i < r->track_count; i++) {
         Track *t = &r->tracks[i];
-        ID3Tag tag;
-        if (id3_read(t->path, &tag)) {
-            if (tag.title[0])  scopy(t->title, NAME_LEN, tag.title);
-            if (tag.artist[0]) scopy(t->artist, NAME_LEN, tag.artist);
-            if (tag.track > 0) t->track_no = tag.track;
-            if (!r->year && tag.year) r->year = tag.year;
+        TrackMeta m;
 
-            if (tag.artist[0]) {
-                if (!artist_set) { scopy(r->artist, NAME_LEN, tag.artist); artist_set = 1; }
-                else if (!various && ci_cmp(r->artist, tag.artist) != 0) various = 1;
+        /* Cache hit skips the ID3 read AND the 64 KB duration scan below. On a
+           miss we do the reads once and store the result for next time. */
+        if (!metacache_get(t->path, &m)) {
+            ID3Tag tag;
+            memset(&m, 0, sizeof(m));
+            if (id3_read(t->path, &tag)) {
+                scopy(m.title,  NAME_LEN, tag.title);
+                scopy(m.artist, NAME_LEN, tag.artist);
+                scopy(m.album,  NAME_LEN, tag.album);
+                m.track_no = tag.track;
+                m.year     = tag.year;
             }
+            m.duration_sec = mp3_estimate_duration_sec(t->path);
+            metacache_put(t->path, &m);
         }
+
+        if (m.title[0])  scopy(t->title, NAME_LEN, m.title);
+        if (m.artist[0]) scopy(t->artist, NAME_LEN, m.artist);
+        if (m.track_no > 0) t->track_no = m.track_no;
+        if (!r->year && m.year) r->year = m.year;
+
+        if (m.artist[0]) {
+            if (!artist_set) { scopy(r->artist, NAME_LEN, m.artist); artist_set = 1; }
+            else if (!various && ci_cmp(r->artist, m.artist) != 0) various = 1;
+        }
+
         if (t->track_no <= 0) t->track_no = i + 1;
-        t->duration_sec = mp3_estimate_duration_sec(t->path);
+        t->duration_sec = m.duration_sec;
     }
 
     if (various) scopy(r->artist, NAME_LEN, "VARIOUS ARTISTS");
     if (!artist_set && r->is_playlist) scopy(r->artist, NAME_LEN, "PLAYLIST");
     r->meta_loaded = 1;
+
+    /* Persist now (no-op unless new entries were added) so the speed-up
+       survives even if the app is killed rather than exited cleanly. */
+    metacache_save();
 }
 
 static void free_records(Record *arr, int n)

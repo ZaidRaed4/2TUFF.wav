@@ -11,6 +11,8 @@
 #include "audio.h"
 #include "library.h"
 #include "config.h"
+#include "metacache.h"
+#include "favorites.h"
 
 PSP_MODULE_INFO("2TUFFwav", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
@@ -58,18 +60,23 @@ int main(int argc, char *argv[])
     }
     config_init(argc > 0 ? argv[0] : 0);
     config_load();
+    metacache_init(argc > 0 ? argv[0] : 0);
+    metacache_load();
+    favorites_init(argc > 0 ? argv[0] : 0);
+    favorites_load();
 
     memset(&g_app, 0, sizeof(g_app));
     g_app.screen = SCREEN_LIBRARY;
     g_app.mode = MODE_ALBUMS;
     g_app.preview_for = -1;
     library_scan(&g_app.lib, MUSIC_ROOTS, NUM_MUSIC_ROOTS);
+    favorites_attach(&g_app.lib);
 
     while (g_running) {
         SceCtrlData pad;
         sceCtrlReadBufferPositive(&pad, 1);
         g_held = pad.Buttons;
-        g_pressed = g_held & ~g_app.btn_prev;   /* edge-detect: buttons pressed just this frame */
+        g_pressed = g_held & ~g_app.btn_prev;  
         g_app.btn_prev = g_held;
 
         g_app.time += gfx_dt();
@@ -90,10 +97,13 @@ int main(int argc, char *argv[])
     lyrics_free(&g_app.lyrics);
 #endif
     if (g_app.preview_tex)   tex_free(g_app.preview_tex);
-    if (g_app.rec_tex)       tex_free(g_app.rec_tex);
     if (g_app.rec_thumb_tex) tex_free(g_app.rec_thumb_tex);
-    if (g_app.np_tex)        tex_free(g_app.np_tex);
+    if (g_app.play_tex)      tex_free(g_app.play_tex);
     library_free(&g_app.lib);
+    metacache_save();
+    metacache_free();
+    favorites_save();
+    favorites_free();
     text_shutdown();
     gfx_shutdown();
 

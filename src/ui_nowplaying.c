@@ -11,6 +11,7 @@
 #include "glyphs.h"
 #include "audio.h"
 #include "viz.h"
+#include "favorites.h"
 
 #define ANIM_DUR  0.45f
 #define VIEW_ANIM_DUR 0.30f
@@ -162,7 +163,7 @@ static void corner(int x, int y, int dx, int dy, unsigned int col)
 
 void scr_nowplaying(void)
 {
-    Record *r = g_app.rec;
+    Record *r = g_app.play_rec;
     Track *t;
     float dt = gfx_dt();
     float a, cx, cy, sz;
@@ -175,7 +176,7 @@ void scr_nowplaying(void)
     float disp_prog;
 
     if (!r || g_app.np_index < 0 || g_app.np_index >= r->track_count) {
-        g_app.screen = SCREEN_RECORD;
+        g_app.screen = SCREEN_LIBRARY;
         return;
     }
     t = &r->tracks[g_app.np_index];
@@ -185,7 +186,15 @@ void scr_nowplaying(void)
     can_scrub = (total_ms > 0) &&
                 (st == AUDIO_PLAYING || st == AUDIO_PAUSED);
 
-    if (PRESSED(PSP_CTRL_CIRCLE)) { scrub_end(); g_app.screen = SCREEN_RECORD; return; }
+    if (PRESSED(PSP_CTRL_CIRCLE)) { scrub_end(); g_app.screen = g_app.np_from; return; }
+
+    if (PRESSED(PSP_CTRL_SELECT)) {
+        app_toggle_favorite(&r->tracks[g_app.np_index]);
+        if (!g_app.play_rec) { scrub_end(); g_app.screen = SCREEN_LIBRARY; return; }
+        r = g_app.play_rec;
+        if (g_app.np_index >= r->track_count) g_app.np_index = r->track_count - 1;
+        if (g_app.np_index < 0) g_app.np_index = 0;
+    }
 
     if (PRESSED(PSP_CTRL_CROSS)) {
         if (g_app.scrub_dir != 0) scrub_end();
@@ -332,13 +341,9 @@ void scr_nowplaying(void)
             cy = 58.0f + (ART_CY - 58.0f) * a;
             sz = 64.0f + (ART_SZ - 64.0f) * a;
 
-            {
-                Texture *cover = (r->is_playlist && g_app.np_tex) ? g_app.np_tex
-                                                                  : g_app.rec_tex;
-                if (cover)
-                    gfx_blit_nn(cover, cx - sz * 0.5f, cy - sz * 0.5f, sz, sz,
-                                fade(RGB(255, 255, 255), coverA));
-            }
+            if (g_app.play_tex)
+                gfx_blit_nn(g_app.play_tex, cx - sz * 0.5f, cy - sz * 0.5f, sz, sz,
+                            fade(RGB(255, 255, 255), coverA));
 
 #if LYRICS_ENABLED
             if (la > 0.001f) draw_lyrics_panel(la * coverA);
@@ -349,7 +354,12 @@ void scr_nowplaying(void)
     y0 = GY(11);
     ui_rule(0, y0, SCR_W);
 
-    text_put_clip(F_LG, PAD, y0, TH.ink, t->title, SCR_W - 2 * PAD);
+    text_put_clip(F_LG, PAD, y0, TH.ink, t->title, SCR_W - 2 * PAD - 22);
+    {
+        int ss = 15;
+        ui_star(SCR_W - PAD - ss, y0 + (font_ch(F_LG) - ss) / 2, ss,
+                favorites_contains(t->path) ? TH.accent : TH.ink_mute);
+    }
 
     if (g_app.scrub_dir != 0) {
         disp_ms   = (int)g_app.scrub_ms;

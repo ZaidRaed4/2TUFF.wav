@@ -706,6 +706,8 @@ void scr_library(void)
         g_app.controls_open = 1;
     } else {
 
+        if (PRESSED(PSP_CTRL_START) && playback_active()) { goto_nowplaying(); return; }
+
         if (PRESSED(PSP_CTRL_SQUARE)) {
             g_app.mode = (LibMode)((g_app.mode + 1) % MODE_COUNT);
             g_app.lib_sel = 0;
@@ -840,14 +842,18 @@ void scr_library(void)
 
     if (!g_app.tree_menu_open) {
         ui_rule(0, FOOTER_TOP, SCR_W);
-        {
-            int bs = 13;
-            int bw = psp_btn(BTN_SELECT, PAD, FOOTER_TOP + (FOOTER_H - bs) / 2, bs);
-            text_put(F_SM, PAD + bw + 8, FOOTER_TOP + 1, TH.ink_mute, "CONTROLS");
+        if (playback_active()) {
+            ui_nowplaying_bar(playback_title(), playback_paused());
+        } else {
+            {
+                int bs = 13;
+                int bw = psp_btn(BTN_SELECT, PAD, FOOTER_TOP + (FOOTER_H - bs) / 2, bs);
+                text_put(F_SM, PAD + bw + 8, FOOTER_TOP + 1, TH.ink_mute, "CONTROLS");
+            }
+            snprintf(buf, sizeof(buf), "%02d %s", count,
+                     (g_app.mode == MODE_TREES) ? "DIR" : "REC");
+            text_put_right(F_SM, SCR_W - PAD, FOOTER_TOP + 1, TH.ink_mute, buf);
         }
-        snprintf(buf, sizeof(buf), "%02d %s", count,
-                 (g_app.mode == MODE_TREES) ? "DIR" : "REC");
-        text_put_right(F_SM, SCR_W - PAD, FOOTER_TOP + 1, TH.ink_mute, buf);
     }
 
     if (g_app.tree_menu_open)          draw_tree_menu();

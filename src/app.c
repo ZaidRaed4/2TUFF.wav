@@ -7,6 +7,7 @@
 #include "id3.h"
 #include "audio.h"
 #include "viz.h"
+#include "favorites.h"
 
 App g_app;
 unsigned int g_pressed = 0;
@@ -112,11 +113,8 @@ void open_record_ptr(Record *r)
     g_app.rec_sel = 0;
     g_app.rec_top = 0;
 
-    if (g_app.rec_tex) { tex_free(g_app.rec_tex); g_app.rec_tex = NULL; }
+    
     if (g_app.rec_thumb_tex) { tex_free(g_app.rec_thumb_tex); g_app.rec_thumb_tex = NULL; }
-    if (g_app.np_tex) { tex_free(g_app.np_tex); g_app.np_tex = NULL; }
-    g_app.rec_tex = load_cover_for_record(g_app.rec, COVER_TEX);
-
     g_app.rec_thumb_tex = load_cover_for_record(g_app.rec, REC_ART);
 
     g_app.screen = SCREEN_RECORD;
@@ -132,21 +130,81 @@ void open_record(int index)
 
 void go_library(void)
 {
-    audio_stop();
-    if (g_app.rec_tex) { tex_free(g_app.rec_tex); g_app.rec_tex = NULL; }
     if (g_app.rec_thumb_tex) { tex_free(g_app.rec_thumb_tex); g_app.rec_thumb_tex = NULL; }
-    if (g_app.np_tex) { tex_free(g_app.np_tex); g_app.np_tex = NULL; }
     g_app.rec = NULL;
     g_app.screen = SCREEN_LIBRARY;
 
     g_app.preview_for = -1;
-#if LYRICS_ENABLED
-    lyrics_free(&g_app.lyrics);
-#endif
-    g_app.np_view    = NP_VIEW_COVER;
-    g_app.viz_style  = VIZ_STYLE_FIELD;
-    g_app.lyrics_anim = 0.0f;
-    g_app.viz_anim    = 0.0f;
+}
+
+static int pl_index(Record *p, Record *base, int n)
+{
+    if (p && base && p >= base && p < base + n) return (int)(p - base);
+    return -1;
+}
+
+static void fav_prepend(Library *lib)
+{
+    Record *old = lib->playlists;
+    int n  = lib->playlist_count;
+    int ri = pl_index(g_app.rec, old, n);
+    int pi = pl_index(g_app.play_rec, old, n);
+    Record *arr = (Record *)realloc(old, (size_t)(n + 1) * sizeof(Record));
+    if (!arr) return;
+    memmove(&arr[1], &arr[0], (size_t)n * sizeof(Record));
+    favorites_fill_record(&arr[0]);
+    lib->playlists = arr;
+    lib->playlist_count = n + 1;
+    lib->has_fav = 1;
+    if (ri >= 0) g_app.rec      = &arr[ri + 1];
+    if (pi >= 0) g_app.play_rec = &arr[pi + 1];
+}
+
+static void fav_remove(Library *lib)
+{
+    Record *old = lib->playlists;
+    int n  = lib->playlist_count;
+    int ri = pl_index(g_app.rec, old, n);
+    int pi = pl_index(g_app.play_rec, old, n);
+    Record *arr;
+    if (n <= 0) return;
+    free(old[0].tracks);
+    memmove(&old[0], &old[1], (size_t)(n - 1) * sizeof(Record));
+    arr = (Record *)realloc(old, (size_t)(n - 1 > 0 ? n - 1 : 1) * sizeof(Record));
+    if (!arr) arr = old;
+    lib->playlists = arr;
+    lib->playlist_count = n - 1;
+    lib->has_fav = 0;
+    if (ri == 0)     g_app.rec = NULL;
+    else if (ri > 0) g_app.rec = &arr[ri - 1];
+    if (pi == 0)     g_app.play_rec = NULL;
+    else if (pi > 0) g_app.play_rec = &arr[pi - 1];
+}
+
+static void fav_sync(Library *lib)
+{
+    int want = favorites_count() > 0;
+    if (want && lib->has_fav) {
+        free(lib->playlists[0].tracks);
+        favorites_fill_record(&lib->playlists[0]);
+    } else if (want && !lib->has_fav) {
+        fav_prepend(lib);
+    } else if (!want && lib->has_fav) {
+        fav_remove(lib);
+    }
+}
+
+void favorites_attach(Library *lib)
+{
+    if (favorites_count() > 0 && !lib->has_fav) fav_prepend(lib);
+}
+
+void app_toggle_favorite(const Track *t)
+{
+    if (!t) return;
+    favorites_toggle(t);
+    favorites_save();        
+    fav_sync(&g_app.lib);
 }
 
 #if LYRICS_ENABLED
@@ -168,16 +226,19 @@ static void lrc_path_for(const char *mp3, char *out, int n)
 
 void start_play(int index, int go_nowplaying, int animate)
 {
-    Record *r = g_app.rec;
+    Record *r = g_app.play_rec;
     if (!r || index < 0 || index >= r->track_count) return;
 
     g_app.np_index = index;
     g_app.scrub_dir = 0;
     audio_play_file(r->tracks[index].path, r->tracks[index].duration_sec);
 
-    if (g_app.np_tex) { tex_free(g_app.np_tex); g_app.np_tex = NULL; }
-    if (r->is_playlist)
-        g_app.np_tex = load_cover_for_track(&r->tracks[index], COVER_TEX);
+    /* Playlists show each song's own embedded art, so reload the cover per
+       track. Albums share one cover, loaded once in play_record(). */
+    if (r->is_playlist) {
+        if (g_app.play_tex) { tex_free(g_app.play_tex); g_app.play_tex = NULL; }
+        g_app.play_tex = load_cover_for_track(&r->tracks[index], COVER_TEX);
+    }
 
 #if LYRICS_ENABLED
     {
@@ -201,6 +262,51 @@ void start_play(int index, int go_nowplaying, int animate)
     }
 }
 
+void play_record(Record *r, int index, int go_nowplaying, int animate)
+{
+    if (!r || index < 0 || index >= r->track_count) return;
+
+    g_app.play_rec = r;
+
+    if (!r->is_playlist) {
+        if (g_app.play_tex) { tex_free(g_app.play_tex); g_app.play_tex = NULL; }
+        g_app.play_tex = load_cover_for_record(r, COVER_TEX);
+    }
+
+    if (go_nowplaying) g_app.np_from = g_app.screen;
+
+    start_play(index, go_nowplaying, animate);
+}
+
+void goto_nowplaying(void)
+{
+    if (!playback_active()) return;
+    g_app.np_from = g_app.screen;
+    g_app.screen  = SCREEN_NOWPLAYING;
+    g_app.np_anim = 1.0f;  
+}
+
+int playback_active(void)
+{
+    AudioState st;
+    if (!g_app.play_rec) return 0;
+    st = audio_state();
+    return st == AUDIO_PLAYING || st == AUDIO_PAUSED;
+}
+
+int playback_paused(void)
+{
+    return audio_state() == AUDIO_PAUSED;
+}
+
+const char *playback_title(void)
+{
+    if (g_app.play_rec && g_app.np_index >= 0 &&
+        g_app.np_index < g_app.play_rec->track_count)
+        return g_app.play_rec->tracks[g_app.np_index].title;
+    return "";
+}
+
 static unsigned int rng_state = 0;
 static unsigned int rng_next(void)
 {
@@ -220,8 +326,8 @@ static int     shuf_pos   = 0;
 
 static int shuffle_alloc(void)
 {
-    int n = g_app.rec ? g_app.rec->track_count : 0;
-    shuf_rec = g_app.rec;
+    int n = g_app.play_rec ? g_app.play_rec->track_count : 0;
+    shuf_rec = g_app.play_rec;
     if (n <= 0) { shuf_n = 0; return 0; }
     if (n > shuf_cap) {
         int *p = (int *)realloc(shuf_order, (size_t)n * sizeof(int));
@@ -266,16 +372,16 @@ static void shuffle_newpass(int last)
 
 static void shuffle_sync(int cur)
 {
-    int n = g_app.rec ? g_app.rec->track_count : 0;
+    int n = g_app.play_rec ? g_app.play_rec->track_count : 0;
     int i;
-    if (shuf_rec != g_app.rec || shuf_n != n) { shuffle_build(cur); return; }
+    if (shuf_rec != g_app.play_rec || shuf_n != n) { shuffle_build(cur); return; }
     if (shuf_pos < 0 || shuf_pos >= n || shuf_order[shuf_pos] != cur)
         for (i = 0; i < n; i++) if (shuf_order[i] == cur) { shuf_pos = i; break; }
 }
 
 int next_track_index(int cur)
 {
-    int n = g_app.rec ? g_app.rec->track_count : 0;
+    int n = g_app.play_rec ? g_app.play_rec->track_count : 0;
     if (n <= 1) return cur;
     if (!g_app.shuffle) return cur + 1;
 
@@ -293,7 +399,7 @@ int next_track_index(int cur)
 
 int prev_track_index(int cur)
 {
-    int n = g_app.rec ? g_app.rec->track_count : 0;
+    int n = g_app.play_rec ? g_app.play_rec->track_count : 0;
     if (n <= 1) return cur;
     if (!g_app.shuffle) return cur - 1;
 
@@ -307,12 +413,12 @@ void handle_auto_advance(void)
 {
     if (!audio_finished()) return;
     audio_clear_finished();
-    if (!g_app.rec) return;
+    if (!g_app.play_rec) return;
 
-    if (g_app.shuffle && g_app.rec->track_count > 1) {
+    if (g_app.shuffle && g_app.play_rec->track_count > 1) {
 
         start_play(next_track_index(g_app.np_index), 0, 0);
-    } else if (g_app.np_index < g_app.rec->track_count - 1) {
+    } else if (g_app.np_index < g_app.play_rec->track_count - 1) {
 
         start_play(g_app.np_index + 1, 0, 0);
     }

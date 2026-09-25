@@ -6,6 +6,8 @@
 void ui_statusbar(const char *left, const char *right);
 void ui_footer(const char *left, const char *right);
 
+void ui_nowplaying_bar(const char *title, int paused);
+
 void ui_rule(int x, int y, int w);
 void ui_vrule(int x, int y, int h);
 void ui_dotrule(int x, int y, int w);
@@ -25,5 +27,7 @@ void ui_frame(int x, int y, int w, int h);
 int  ui_chip(Font f, int x, int y, const char *s, unsigned int fill, unsigned int ink);
 
 void ui_folder_icon(int x, int y, int s, unsigned int col);
+
+void ui_star(int x, int y, int s, unsigned int col);
 
 #endif

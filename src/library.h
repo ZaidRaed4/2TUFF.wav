@@ -38,6 +38,7 @@ typedef struct {
     Record *playlists;  int playlist_count;
     FolderNode *trees;  int tree_count;
     int scanned;
+    int has_fav;        /* 1 when playlists[0] is the synthesized Favorites list */
 } Library;
 
 void library_init(Library *lib);

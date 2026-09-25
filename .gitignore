@@ -20,3 +20,12 @@ EBOOT.PBP
 *.swp
 .DS_Store
 Thumbs.db
+# --- Local dev files (not part of the published project) ---
+.claude/
+.emu/
+.tools.sh
+tools/
+release/
+ARCHITECTURE.md
+OPTIMIZATION_PLAN.md
+PROGRESS.md

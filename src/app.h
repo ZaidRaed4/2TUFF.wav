@@ -30,9 +30,11 @@ typedef struct {
     Record   *rec;
     int       rec_sel;
     int       rec_top;
-    Texture  *rec_tex;
     Texture  *rec_thumb_tex;
-    Texture  *np_tex;
+
+    Record   *play_rec;
+    Texture  *play_tex;
+    Screen    np_from;
 
     int       np_index;
     float     np_anim;
@@ -88,7 +90,14 @@ Texture *app_load_cover(Record *r, int size);
 void    open_record(int index);
 void    open_record_ptr(Record *r);
 void    go_library(void);
+void    favorites_attach(Library *lib);
+void    app_toggle_favorite(const Track *t);
 void    start_play(int index, int go_nowplaying, int animate);
+void    play_record(Record *r, int index, int go_nowplaying, int animate);
+void    goto_nowplaying(void);
+int     playback_active(void);
+int     playback_paused(void);
+const char *playback_title(void);
 int     next_track_index(int cur);
 int     prev_track_index(int cur);
 void    handle_auto_advance(void);

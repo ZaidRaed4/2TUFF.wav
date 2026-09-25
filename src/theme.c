@@ -81,6 +81,70 @@ const Theme THEME_TABLE[THEME_COUNT] = {
         .cover_bg    = RGB(64, 44, 30),
         .cover_invert = 1,
     },
+
+    {
+        .name        = "WRY MUSTARD",
+        .bg          = RGB(44, 50, 26),
+        .panel       = RGB(56, 62, 34),
+        .ink         = RGB(233, 235, 198),
+        .ink_dim     = RGB(188, 194, 148),
+        .ink_mute    = RGB(138, 146, 100),
+        .rule        = RGB(92, 100, 58),
+        .accent      = RGB(226, 208, 66),
+        .accent_ink  = RGB(40, 44, 22),
+        .sel_fill    = RGB(226, 208, 66),
+        .sel_ink     = RGB(40, 44, 22),
+        .meter_on    = RGB(233, 235, 198),
+        .meter_off   = RGB(70, 78, 44),
+        .grid        = RGBA(190, 200, 120, 20),
+        .cover_ink   = RGB(230, 233, 196),
+        .cover_bg    = RGB(40, 46, 24),
+        .cover_invert = 1,
+    },
+
+    {
+        .name        = "EARL GREY",
+        .bg          = RGB(36, 30, 26),
+        .panel       = RGB(50, 42, 36),
+        .ink         = RGB(238, 232, 220),
+        .ink_dim     = RGB(190, 180, 165),
+        .ink_mute    = RGB(140, 130, 116),
+        .rule        = RGB(92, 80, 68),
+        .accent      = RGB(104, 126, 228),
+        .accent_ink  = RGB(244, 242, 234),
+        .sel_fill    = RGB(202, 130, 58),
+        .sel_ink     = RGB(38, 28, 20),
+        .meter_on    = RGB(238, 232, 220),
+        .meter_off   = RGB(66, 56, 48),
+        .grid        = RGBA(150, 158, 200, 18),
+        .cover_ink   = RGB(236, 230, 218),
+        .cover_bg    = RGB(34, 28, 24),
+        .cover_invert = 1,
+    },
+
+    /* Exact 2-colour theme from the red-dragon reference: paper white and the
+       dragon's coral-red (#FFFFFF + #F14C38). The quiet roles (dim/mute/rule/
+       panel/meter-off) are lighter tints of that same dragon red, so no third
+       hue enters the palette. */
+    {
+        .name        = "ZUSHI",
+        .bg          = RGB(255, 255, 255),
+        .panel       = RGB(254, 244, 243),
+        .ink         = RGB(241, 76, 56),
+        .ink_dim     = RGB(247, 151, 140),
+        .ink_mute    = RGB(250, 187, 179),
+        .rule        = RGB(249, 174, 165),
+        .accent      = RGB(241, 76, 56),
+        .accent_ink  = RGB(255, 255, 255),
+        .sel_fill    = RGB(241, 76, 56),
+        .sel_ink     = RGB(255, 255, 255),
+        .meter_on    = RGB(241, 76, 56),
+        .meter_off   = RGB(252, 210, 205),
+        .grid        = RGBA(241, 76, 56, 18),
+        .cover_ink   = RGB(241, 76, 56),
+        .cover_bg    = RGB(255, 255, 255),
+        .cover_invert = 0,
+    },
 };
 
 const Theme *g_theme = &THEME_TABLE[ACTIVE_THEME];

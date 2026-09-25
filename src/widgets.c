@@ -4,6 +4,7 @@
 #include "gfx.h"
 #include "theme.h"
 #include "glyphs.h"
+#include "controls.h"
 
 void ui_rule(int x, int y, int w)  { gfx_hline((float)x, (float)y, (float)w, 1, TH.rule); }
 void ui_vrule(int x, int y, int h) { gfx_quad((float)x, (float)y, 1, (float)h, TH.rule); }
@@ -34,6 +35,41 @@ void ui_footer(const char *left, const char *right)
     ui_rule(0, FOOTER_TOP, SCR_W);
     if (left)  text_put(F_SM, PAD, FOOTER_TOP + 1, TH.ink_mute, left);
     if (right) text_put_right(F_SM, SCR_W - PAD, FOOTER_TOP + 1, TH.ink_mute, right);
+}
+
+void ui_nowplaying_bar(const char *title, int paused)
+{
+    int ty   = FOOTER_TOP + 1;
+    int gx   = PAD;
+    int gy   = FOOTER_TOP + (FOOTER_H - 10) / 2; 
+    const char *lbl = "PLAYER";
+    int bs   = 13;
+    int by   = FOOTER_TOP + (FOOTER_H - bs) / 2;
+    int lblw = text_w(F_SM, lbl);
+    int btnw = text_w(F_SM, "START") + 10;  
+    int rx   = SCR_W - PAD - lblw;               
+    int bx   = rx - 8 - btnw;       
+    int tx   = gx + 13;                       
+    int tw   = bx - 10 - tx;         
+
+    if (paused) {
+        gfx_quad((float)gx,       (float)gy, 3, 10, TH.accent);
+        gfx_quad((float)(gx + 5), (float)gy, 3, 10, TH.accent);
+    } else {
+        int i, h = 10;
+        for (i = 0; i < h; i++) {
+            float d = (float)i - (h - 1) * 0.5f;
+            float t;
+            if (d < 0) d = -d;
+            t = 1.0f - d / ((h - 1) * 0.5f);        
+            gfx_quad((float)gx, (float)(gy + i), 8.0f * t + 1.0f, 1.0f, TH.accent);
+        }
+    }
+
+    if (tw > 0) text_put_clip(F_SM, tx, ty, TH.ink, title, tw);
+
+    psp_btn(BTN_START, bx, by, bs);
+    text_put(F_SM, rx, ty, TH.ink_mute, lbl);
 }
 
 void ui_meter(Font f, int x, int y, int cells, float frac,
@@ -122,6 +158,38 @@ int ui_chip(Font f, int x, int y, const char *s, unsigned int fill, unsigned int
     gfx_quad((float)x, (float)y, (float)w, (float)font_ch(f), fill);
     text_put(f, x + padx, y, ink, s);
     return w;
+}
+
+static const float STAR_PT[10][2] = {
+    { 0.000f, -1.000f}, { 0.235f, -0.324f}, { 0.951f, -0.309f}, { 0.380f,  0.124f},
+    { 0.588f,  0.809f}, { 0.000f,  0.400f}, {-0.588f,  0.809f}, {-0.380f,  0.124f},
+    {-0.951f, -0.309f}, {-0.235f, -0.324f}
+};
+
+static int in_star(float px, float py)
+{
+    int i, j, c = 0;
+    for (i = 0, j = 9; i < 10; j = i++) {
+        if (((STAR_PT[i][1] > py) != (STAR_PT[j][1] > py)) &&
+            (px < (STAR_PT[j][0] - STAR_PT[i][0]) * (py - STAR_PT[i][1]) /
+                  (STAR_PT[j][1] - STAR_PT[i][1]) + STAR_PT[i][0]))
+            c = !c;
+    }
+    return c;
+}
+
+void ui_star(int x, int y, int s, unsigned int col)
+{
+    float R = s * 0.5f;
+    int px, py;
+    for (py = 0; py < s; py++) {
+        float ny = ((float)py + 0.5f - R) / R;
+        for (px = 0; px < s; px++) {
+            float nx = ((float)px + 0.5f - R) / R;
+            if (in_star(nx, ny))
+                gfx_quad((float)(x + px), (float)(y + py), 1.0f, 1.0f, col);
+        }
+    }
 }
 
 void ui_folder_icon(int x, int y, int s, unsigned int col)
