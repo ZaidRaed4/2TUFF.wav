@@ -101,6 +101,8 @@ the file — dumping `meta.cache` only forces a fresh scan, and dumping
   favorite it, and again to unfavorite. Everything you star gets gathered into a
   **Favorites** list that shows up automatically at the top of your library, and
   it's saved to a `favorites.dat` file next to the EBOOT so it survives a reboot.
+  Favorites isn't a real folder, so to give it a cover drop a JPEG named
+  `favorites.jpg` right next to the EBOOT too (`PSP/GAME/2TUFFwav/favorites.jpg`).
 
 ## Controls
 

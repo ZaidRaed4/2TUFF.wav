@@ -311,12 +311,32 @@ int favorites_toggle(const Track *t)
     return 1;
 }
 
+/* Favorites has no folder of its own, so its cover is a sidecar next to
+   favorites.dat: favorites.jpg / .jpeg / .png beside the EBOOT. */
+static void find_fav_cover(char *out, int outsz)
+{
+    static const char *exts[3] = { "jpg", "jpeg", "png" };
+    char cand[sizeof(g_file) + 8];
+    SceIoStat st;
+    int k, blen;
+
+    out[0] = '\0';
+    scopy(cand, sizeof(cand), g_file);
+    blen = (int)strlen(cand) - 3;               /* drop "dat", keep the dot */
+    if (blen <= 0) return;
+    for (k = 0; k < 3; k++) {
+        scopy(cand + blen, (int)sizeof(cand) - blen, exts[k]);
+        if (sceIoGetstat(cand, &st) >= 0) { scopy(out, outsz, cand); return; }
+    }
+}
+
 void favorites_fill_record(Record *r)
 {
     int i;
     memset(r, 0, sizeof(*r));
     scopy(r->name, NAME_LEN, "Favorites");
     scopy(r->artist, NAME_LEN, "PLAYLIST");
+    find_fav_cover(r->cover_path, MAX_PATH_LEN);
     r->is_playlist = 1;
     r->meta_loaded = 1;           /* titles/durations are already known */
     r->track_count = g_count;
